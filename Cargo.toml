@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.94"
+bytes = "1.9.0"
+image = "0.25.5"
+thiserror = "2.0.6"
+zstd = "0.13.2"
