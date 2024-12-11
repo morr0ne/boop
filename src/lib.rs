@@ -120,7 +120,7 @@ impl BoopImage {
 
     pub fn decode(data: &[u8]) -> Result<Self, Error> {
         // Validate minimum length and magic number
-        if data.len() < 17 || &data[0..4] != MAGIC {
+        if data.len() < HEADER_SIZE || &data[0..4] != MAGIC {
             return Err(Error::MalformedHeader);
         }
 
@@ -132,14 +132,16 @@ impl BoopImage {
         // FIXME: don't unwrap
         let width = u32::from_le_bytes(data[5..9].try_into().unwrap());
         let height = u32::from_le_bytes(data[9..13].try_into().unwrap());
-        let compressed_len = u32::from_le_bytes(data[13..17].try_into().unwrap()) as usize;
+        let compressed_len = u32::from_le_bytes(data[13..HEADER_SIZE].try_into().unwrap()) as usize;
 
         // Validate compressed data length
-        if data.len() < 17 + compressed_len {
+        if data.len() < HEADER_SIZE + compressed_len {
             return Err(Error::MalformedBody);
         }
 
-        let data = Self::delta_decode(&decode_all(&data[17..17 + compressed_len])?);
+        let data = Self::delta_decode(&decode_all(
+            &data[HEADER_SIZE..HEADER_SIZE + compressed_len],
+        )?);
 
         Ok(Self {
             width,
