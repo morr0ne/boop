@@ -8,9 +8,22 @@ lto = true
 codegen-units = 1
 strip = true
 
+[features]
+bin = ["dep:anyhow", "dep:clap", "dep:image"]
+
 [dependencies]
-anyhow = "1.0.94"
+# Depedencies required by the decoder
 bytes = "1.9.0"
-image = "0.25.5"
 thiserror = "2.0.6"
 zstd = "0.13.2"
+
+# Depedencies for the cli
+anyhow = { version = "1.0.94", optional = true }
+clap = { version = "4.5.23", features = [
+    "derive",
+    "cargo",
+    "env",
+    "unicode",
+    "wrap_help",
+], optional = true }
+image = { version = "0.25.5", optional = true }
