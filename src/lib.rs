@@ -1,16 +1,107 @@
-use bytes::{BufMut, Bytes, BytesMut};
+use bitflags::bitflags;
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use zstd::{bulk::Compressor, decode_all};
 
-// - "BOOP" magic number (4 bytes)
-// - Version number (1 byte)
-// - Width (4 bytes, little endian)
-// - Height (4 bytes, little endian)
-// - Compressed data length (4 bytes, little endian)
-// - Compressed image data (variable length)
+bitflags! {
+    #[derive(Debug)]
+    #[repr(transparent)]
+    pub struct Flags: u32 {
+        const Alpha = 0b00000001;
+    }
+}
 
-const MAGIC: &[u8] = b"BOOP";
-const VERSION: u8 = 1;
-const HEADER_SIZE: usize = MAGIC.len() + 1 + 4 + 4 + 4;
+#[derive(Debug)]
+pub struct Header {
+    pub magic: [u8; 4],
+    pub version: u8,
+}
+
+impl Header {
+    pub const MAGIC: [u8; 4] = *b"BOOP";
+    pub const VERSION: u8 = 1;
+
+    pub fn is_valid(&self) -> bool {
+        self.magic == Self::MAGIC
+    }
+
+    pub fn is_supported(&self) -> bool {
+        self.version <= Self::VERSION
+    }
+
+    pub fn to_bytes(&self) -> Bytes {
+        let mut bytes = BytesMut::with_capacity(Self::MAGIC.len() + 1);
+
+        bytes.put(&Self::MAGIC[..]);
+        bytes.put_u8(Self::VERSION);
+
+        bytes.freeze()
+    }
+
+    pub fn from_bytes(mut src: Bytes) -> Result<Self, Error> {
+        if src.remaining() < size_of::<Self>() {
+            return Err(Error::MalformedHeader);
+        }
+
+        let mut magic = [0u8; 4];
+        src.copy_to_slice(&mut magic);
+        let version = src.get_u8();
+
+        Ok(Self { magic, version })
+    }
+}
+
+impl Default for Header {
+    fn default() -> Self {
+        Self {
+            magic: Self::MAGIC,
+            version: Self::VERSION,
+        }
+    }
+}
+
+#[derive(Debug)]
+
+pub struct InformationV1 {
+    pub flags: Flags,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl InformationV1 {
+    pub fn new(flags: Flags, width: u32, height: u32) -> Self {
+        Self {
+            flags,
+            width,
+            height,
+        }
+    }
+
+    pub fn to_bytes(&self) -> Bytes {
+        let mut bytes = BytesMut::with_capacity(size_of::<u32>() * 3);
+
+        bytes.put_u32_le(self.flags.bits());
+        bytes.put_u32_le(self.width);
+        bytes.put_u32_le(self.height);
+
+        bytes.freeze()
+    }
+
+    pub fn from_bytes(mut src: Bytes) -> Result<Self, Error> {
+        if src.remaining() < size_of::<Self>() {
+            return Err(Error::MalformedBody);
+        }
+
+        let flags = Flags::from_bits_retain(src.get_u32_le());
+        let width = src.get_u32_le();
+        let height = src.get_u32_le();
+
+        Ok(Self {
+            flags,
+            width,
+            height,
+        })
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -103,50 +194,39 @@ impl BoopImage {
 
         let compressed = compressor.compress(&self.delta_encode())?;
 
-        let mut encoded = BytesMut::with_capacity(HEADER_SIZE + compressed.len());
+        let mut encoded = BytesMut::with_capacity(
+            size_of::<Header>() + size_of::<InformationV1>() + compressed.len(),
+        );
 
         // Write header
-        encoded.put(MAGIC);
-        encoded.put_u8(VERSION);
-        encoded.put_u32_le(self.width);
-        encoded.put_u32_le(self.height);
-        encoded.put_u32_le(compressed.len() as u32); // Compressed length
-
-        // Write compressed data
+        encoded.put(Header::default().to_bytes());
+        encoded.put(InformationV1::new(Flags::empty(), self.width, self.height).to_bytes());
         encoded.put(compressed.as_slice());
 
         Ok(encoded.freeze())
     }
 
-    pub fn decode(data: &[u8]) -> Result<Self, Error> {
-        // Validate minimum length and magic number
-        if data.len() < HEADER_SIZE || &data[0..4] != MAGIC {
+    pub fn decode(mut data: &[u8]) -> Result<Self, Error> {
+        let header = Header::from_bytes(data.copy_to_bytes(size_of::<Header>()))?;
+
+        if !header.is_valid() {
             return Err(Error::MalformedHeader);
         }
 
-        let version = data[4];
-        if version != VERSION {
-            return Err(Error::Unsupported);
+        match header.version {
+            1 => {
+                let InformationV1 { width, height, .. } =
+                    InformationV1::from_bytes(data.copy_to_bytes(size_of::<InformationV1>()))?;
+
+                let data = Self::delta_decode(&decode_all(data.reader())?);
+
+                Ok(Self {
+                    width,
+                    height,
+                    data,
+                })
+            }
+            _ => Err(Error::Unsupported),
         }
-
-        // FIXME: don't unwrap
-        let width = u32::from_le_bytes(data[5..9].try_into().unwrap());
-        let height = u32::from_le_bytes(data[9..13].try_into().unwrap());
-        let compressed_len = u32::from_le_bytes(data[13..HEADER_SIZE].try_into().unwrap()) as usize;
-
-        // Validate compressed data length
-        if data.len() < HEADER_SIZE + compressed_len {
-            return Err(Error::MalformedBody);
-        }
-
-        let data = Self::delta_decode(&decode_all(
-            &data[HEADER_SIZE..HEADER_SIZE + compressed_len],
-        )?);
-
-        Ok(Self {
-            width,
-            height,
-            data,
-        })
     }
 }
