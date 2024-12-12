@@ -1,6 +1,9 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use zstd::{bulk::Compressor, decode_all};
 
+#[cfg(feature = "image")]
+use image::{DynamicImage, RgbImage, RgbaImage};
+
 #[derive(Debug, Clone, Copy)]
 #[repr(u32)]
 pub enum Channels {
@@ -191,5 +194,61 @@ impl BoopImage {
             channels,
             data,
         })
+    }
+
+    #[cfg(feature = "image")]
+    pub fn to_dynamic_image(self) -> Option<DynamicImage> {
+        match self.channels {
+            Channels::RGB => Some(DynamicImage::ImageRgb8(RgbImage::from_raw(
+                self.width,
+                self.height,
+                self.into_raw(),
+            )?)),
+            Channels::RGBA => Some(DynamicImage::ImageRgba8(RgbaImage::from_raw(
+                self.width,
+                self.height,
+                self.into_raw(),
+            )?)),
+        }
+    }
+
+    #[cfg(feature = "image")]
+    pub fn from_dynamic_image(image: DynamicImage) -> Self {
+        match image {
+            DynamicImage::ImageRgb8(image) => BoopImage::new(
+                image.width(),
+                image.height(),
+                Channels::RGB,
+                image.into_raw(),
+            ),
+            DynamicImage::ImageRgba8(image) => BoopImage::new(
+                image.width(),
+                image.height(),
+                Channels::RGBA,
+                image.into_raw(),
+            ),
+
+            image => {
+                if image.color().has_alpha() {
+                    let image = image.to_rgba8();
+
+                    BoopImage::new(
+                        image.width(),
+                        image.height(),
+                        Channels::RGBA,
+                        image.into_raw(),
+                    )
+                } else {
+                    let image = image.to_rgb8();
+
+                    BoopImage::new(
+                        image.width(),
+                        image.height(),
+                        Channels::RGB,
+                        image.into_raw(),
+                    )
+                }
+            }
+        }
     }
 }

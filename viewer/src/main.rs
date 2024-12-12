@@ -38,10 +38,10 @@ const MAX_TEXTURE_SIZE: u32 = 2048;
 
 impl MyEguiApp {
     fn new(cc: &eframe::CreationContext<'_>, image: PathBuf) -> Self {
-        let src = BoopImage::decode(&fs::read(image).unwrap()).unwrap();
-        let image = RgbImage::from_raw(src.width(), src.height(), src.into_raw()).unwrap();
-
-        let image = DynamicImage::from(image);
+        let image = BoopImage::decode(&fs::read(image).unwrap())
+            .unwrap()
+            .to_dynamic_image()
+            .unwrap();
 
         let (width, height) = image.dimensions();
 
