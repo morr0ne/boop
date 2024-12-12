@@ -4,7 +4,7 @@ use anyhow::Result;
 use boop::BoopImage;
 use clap::Parser;
 use eframe::egui;
-use egui::TextureHandle;
+use egui::{Image, TextureHandle, Widget};
 use image::{DynamicImage, GenericImageView, RgbImage};
 
 #[derive(Parser)]
@@ -21,7 +21,7 @@ fn main() -> Result<()> {
     };
 
     eframe::run_native(
-        "My egui App",
+        "Boop Viewer",
         native_options,
         Box::new(|cc| Ok(Box::new(MyEguiApp::new(cc, cli.image)))),
     )
@@ -80,10 +80,7 @@ impl MyEguiApp {
 
 impl eframe::App for MyEguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::both().show(ui, |ui| {
-                ui.image(&self.texture);
-            });
-        });
+        egui::CentralPanel::default()
+            .show(ctx, |ui| Image::new(&self.texture).shrink_to_fit().ui(ui));
     }
 }
