@@ -612,6 +612,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "boop",
+ "clap",
  "eframe",
  "egui",
  "image",
