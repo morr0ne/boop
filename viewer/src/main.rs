@@ -1,12 +1,21 @@
-use std::fs;
+use std::{fs, path::PathBuf};
 
 use anyhow::Result;
 use boop::BoopImage;
+use clap::Parser;
 use eframe::egui;
 use egui::TextureHandle;
 use image::{DynamicImage, GenericImageView, RgbImage};
 
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    image: PathBuf,
+}
+
 fn main() -> Result<()> {
+    let cli = Cli::parse();
+
     let native_options = eframe::NativeOptions {
         ..Default::default()
     };
@@ -14,7 +23,7 @@ fn main() -> Result<()> {
     eframe::run_native(
         "My egui App",
         native_options,
-        Box::new(|cc| Ok(Box::new(MyEguiApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(MyEguiApp::new(cc, cli.image)))),
     )
     .expect("failed to run");
 
@@ -28,8 +37,8 @@ struct MyEguiApp {
 const MAX_TEXTURE_SIZE: u32 = 2048;
 
 impl MyEguiApp {
-    fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let src = BoopImage::decode(&fs::read("penny.boop").unwrap()).unwrap();
+    fn new(cc: &eframe::CreationContext<'_>, image: PathBuf) -> Self {
+        let src = BoopImage::decode(&fs::read(image).unwrap()).unwrap();
         let image = RgbImage::from_raw(src.width(), src.height(), src.into_raw()).unwrap();
 
         let image = DynamicImage::from(image);
