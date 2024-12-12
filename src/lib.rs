@@ -1,38 +1,52 @@
-use bitflags::bitflags;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use zstd::{bulk::Compressor, decode_all};
 
-bitflags! {
-    #[derive(Debug)]
-    #[repr(transparent)]
-    pub struct Flags: u32 {
-        const Alpha = 0b00000001;
+#[derive(Debug, Clone, Copy)]
+#[repr(u32)]
+pub enum Channels {
+    RGB = 0,
+    RGBA = 1,
+}
+
+impl TryFrom<u32> for Channels {
+    type Error = Error;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::RGB),
+            1 => Ok(Self::RGBA),
+            _ => Err(Error::MalformedHeader),
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct Header {
     pub magic: [u8; 4],
-    pub version: u8,
+    pub channels: Channels,
+    pub width: u32,
+    pub height: u32,
 }
 
 impl Header {
     pub const MAGIC: [u8; 4] = *b"BOOP";
-    pub const VERSION: u8 = 1;
 
-    pub fn is_valid(&self) -> bool {
-        self.magic == Self::MAGIC
-    }
-
-    pub fn is_supported(&self) -> bool {
-        self.version <= Self::VERSION
+    pub const fn new(channels: Channels, width: u32, height: u32) -> Self {
+        Self {
+            magic: Self::MAGIC,
+            channels,
+            width,
+            height,
+        }
     }
 
     pub fn to_bytes(&self) -> Bytes {
-        let mut bytes = BytesMut::with_capacity(Self::MAGIC.len() + 1);
+        let mut bytes = BytesMut::with_capacity(Self::MAGIC.len() + size_of::<u32>() * 3);
 
         bytes.put(&Self::MAGIC[..]);
-        bytes.put_u8(Self::VERSION);
+        bytes.put_u32_le(self.channels as u32);
+        bytes.put_u32_le(self.width);
+        bytes.put_u32_le(self.height);
 
         bytes.freeze()
     }
@@ -44,59 +58,18 @@ impl Header {
 
         let mut magic = [0u8; 4];
         src.copy_to_slice(&mut magic);
-        let version = src.get_u8();
 
-        Ok(Self { magic, version })
-    }
-}
-
-impl Default for Header {
-    fn default() -> Self {
-        Self {
-            magic: Self::MAGIC,
-            version: Self::VERSION,
-        }
-    }
-}
-
-#[derive(Debug)]
-
-pub struct InformationV1 {
-    pub flags: Flags,
-    pub width: u32,
-    pub height: u32,
-}
-
-impl InformationV1 {
-    pub fn new(flags: Flags, width: u32, height: u32) -> Self {
-        Self {
-            flags,
-            width,
-            height,
-        }
-    }
-
-    pub fn to_bytes(&self) -> Bytes {
-        let mut bytes = BytesMut::with_capacity(size_of::<u32>() * 3);
-
-        bytes.put_u32_le(self.flags.bits());
-        bytes.put_u32_le(self.width);
-        bytes.put_u32_le(self.height);
-
-        bytes.freeze()
-    }
-
-    pub fn from_bytes(mut src: Bytes) -> Result<Self, Error> {
-        if src.remaining() < size_of::<Self>() {
-            return Err(Error::MalformedBody);
+        if magic != Self::MAGIC {
+            return Err(Error::MalformedHeader);
         }
 
-        let flags = Flags::from_bits_retain(src.get_u32_le());
+        let channels = Channels::try_from(src.get_u32_le())?;
         let width = src.get_u32_le();
         let height = src.get_u32_le();
 
         Ok(Self {
-            flags,
+            magic,
+            channels,
             width,
             height,
         })
@@ -108,8 +81,6 @@ pub enum Error {
     #[error("")]
     MalformedHeader,
     #[error("")]
-    Unsupported,
-    #[error("")]
     MalformedBody,
     #[error("{0}")]
     Io(#[from] std::io::Error),
@@ -119,15 +90,17 @@ pub enum Error {
 pub struct BoopImage {
     width: u32,
     height: u32,
+    channels: Channels,
     data: Vec<u8>,
 }
 
 impl BoopImage {
     // Creates a new BoopImage from raw RGB8 data
-    pub fn new(width: u32, height: u32, data: Vec<u8>) -> Self {
+    pub fn new(width: u32, height: u32, channels: Channels, data: Vec<u8>) -> Self {
         Self {
             width,
             height,
+            channels,
             data,
         }
     }
@@ -194,39 +167,29 @@ impl BoopImage {
 
         let compressed = compressor.compress(&self.delta_encode())?;
 
-        let mut encoded = BytesMut::with_capacity(
-            size_of::<Header>() + size_of::<InformationV1>() + compressed.len(),
-        );
+        let mut encoded = BytesMut::with_capacity(size_of::<Header>() + compressed.len());
 
-        // Write header
-        encoded.put(Header::default().to_bytes());
-        encoded.put(InformationV1::new(Flags::empty(), self.width, self.height).to_bytes());
+        encoded.put(Header::new(self.channels, self.width, self.height).to_bytes());
         encoded.put(compressed.as_slice());
 
         Ok(encoded.freeze())
     }
 
     pub fn decode(mut data: &[u8]) -> Result<Self, Error> {
-        let header = Header::from_bytes(data.copy_to_bytes(size_of::<Header>()))?;
+        let Header {
+            width,
+            height,
+            channels,
+            ..
+        } = Header::from_bytes(data.copy_to_bytes(size_of::<Header>()))?;
 
-        if !header.is_valid() {
-            return Err(Error::MalformedHeader);
-        }
+        let data = Self::delta_decode(&decode_all(data.reader())?);
 
-        match header.version {
-            1 => {
-                let InformationV1 { width, height, .. } =
-                    InformationV1::from_bytes(data.copy_to_bytes(size_of::<InformationV1>()))?;
-
-                let data = Self::delta_decode(&decode_all(data.reader())?);
-
-                Ok(Self {
-                    width,
-                    height,
-                    data,
-                })
-            }
-            _ => Err(Error::Unsupported),
-        }
+        Ok(Self {
+            width,
+            height,
+            channels,
+            data,
+        })
     }
 }

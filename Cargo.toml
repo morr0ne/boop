@@ -16,7 +16,6 @@ bin = ["dep:anyhow", "dep:clap", "dep:image"]
 
 [dependencies]
 # Depedencies required by the decoder
-bitflags = "2.6.0"
 bytes = "1.9.0"
 thiserror = "2.0.6"
 zstd = "0.13.2"
