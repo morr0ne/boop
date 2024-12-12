@@ -1,7 +1,6 @@
 use anyhow::Result;
-use boop::{BoopImage, Channels};
+use boop::BoopImage;
 use clap::Parser;
-use image::{RgbImage, RgbaImage};
 use std::{
     ffi::OsStr,
     fs::{self, OpenOptions},
@@ -20,13 +19,13 @@ fn main() -> Result<()> {
     let Cli { input, output } = Cli::parse();
 
     if input.extension() == Some(OsStr::new("boop")) {
-        let src = BoopImage::decode(&fs::read(&input)?)?;
+        let image = BoopImage::decode(&fs::read(&input)?)?
+            .to_dynamic_image()
+            .expect("Failed to allocated dynamic image");
 
-        let new = RgbaImage::from_raw(src.width(), src.height(), src.into_raw()).unwrap();
-
-        new.save(output.unwrap())?;
+        image.save(output.unwrap())?;
     } else {
-        let src = image::open(&input)?.into_rgba8();
+        let src = image::open(&input)?;
         let output = output.unwrap_or_else(|| {
             let mut output = input;
             output.set_extension("boop");
@@ -34,10 +33,7 @@ fn main() -> Result<()> {
             output
         });
 
-        let (width, height) = src.dimensions();
-        let data = src.into_raw();
-
-        let image = BoopImage::new(width, height, Channels::RGBA, data);
+        let image = BoopImage::from_dynamic_image(src);
 
         let mut dest = OpenOptions::new()
             .write(true)

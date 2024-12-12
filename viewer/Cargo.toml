@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.94"
-boop = { version = "0.1.0", path = ".." }
+boop = { version = "0.1.0", path = "..", features = ["image"] }
 clap = { version = "4.5.23", features = [
     "derive",
     "cargo",
