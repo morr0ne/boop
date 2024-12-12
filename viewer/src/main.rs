@@ -5,7 +5,7 @@ use boop::BoopImage;
 use clap::Parser;
 use eframe::egui;
 use egui::{Image, TextureHandle, Widget};
-use image::{DynamicImage, GenericImageView, RgbImage};
+use image::GenericImageView;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
