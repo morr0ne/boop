@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = "1.0.97"
+anyhow = "1.0.98"
 boop = { version = "0.1.0", path = "..", features = ["image"] }
 clap = { version = "4.5.31", features = [
     "derive",
@@ -13,6 +13,6 @@ clap = { version = "4.5.31", features = [
     "unicode",
     "wrap_help",
 ] }
-eframe = { version = "0.31.1", features = ["wayland", "wgpu", "x11"], default-features = false }
-egui = { version = "0.31.1", default-features = false }
-image = { version = "0.25.5", default-features = false }
+eframe = "0.32.0"
+egui = "0.32.0"
+image = { version = "0.25.6", default-features = false }
